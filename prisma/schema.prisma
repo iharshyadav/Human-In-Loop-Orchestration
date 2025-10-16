@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Workflow {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  status        String       // running | waiting_approval | approved | rejected | rolled_back | completed
+  currentStep   String?
+  context       Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastEventId   String?   // optional reference to last event
+  version       Int       @default(1)
+
+  events        EventLog[]
+  humanTasks    HumanTask[]
+  compensations Compensation[]
+}
+
+model EventLog {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  workflowId  String?   @db.ObjectId
+  stepId      String?
+  type        String
+  timestamp   DateTime  @default(now())
+  data        Json
+  actor       String?
+  version     Int       @default(1)
+
+  workflow    Workflow? @relation(fields: [workflowId], references: [id])
+}
+
+model HumanTask {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  workflowId  String    @db.ObjectId
+  stepId      String?
+  assignee    String
+  uiSchema    Json       // dynamic JSON schema for approval UI
+  response    Json?
+  status      String      // pending | approved | rejected | timed_out | escalated
+  channel     String?     // web | slack | email
+  expiresAt   DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workflow    Workflow  @relation(fields: [workflowId], references: [id])
+}
+
+model Compensation {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  workflowId   String    @db.ObjectId
+  action       String     // e.g. refund, rollback_deploy, revert_contract
+  payload      Json
+  status       String     // pending | executed | failed
+  executedAt   DateTime?
+  createdAt    DateTime   @default(now())
+
+  workflow     Workflow  @relation(fields: [workflowId], references: [id])
+}
