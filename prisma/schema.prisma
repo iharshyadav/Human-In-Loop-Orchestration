@@ -14,20 +14,50 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Workflow {
+model User {
   id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  status        String       // running | waiting_approval | approved | rejected | rolled_back | completed
-  currentStep   String?
-  context       Json
+  email         String    @unique
+  username      String?   @unique
+  firstName     String
+  lastName      String
+  role          String    // admin | approver | user | finance_manager | it_admin
+  department    String?   // finance | it | hr | operations
+  permissions   String[]  // array of permissions like ["approve_purchase", "view_workflows"]
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  lastEventId   String?   // optional reference to last event
-  version       Int       @default(1)
+  
+  // Relations
+  createdWorkflows    Workflow[]   @relation("WorkflowCreator")
+  assignedTasks       HumanTask[]  @relation("TaskAssignee")
+  approvedTasks       HumanTask[]  @relation("TaskApprover")
+  createdEvents       EventLog[]   @relation("EventActor")
+}
 
+model Workflow {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  workflowGroupId String    // Groups all versions of the same workflow together
+  name            String
+  status          String    // running | waiting_approval | approved | rejected | rolled_back | completed
+  currentStep     String?
+  context         Json
+  createdById     String?   @db.ObjectId  // User who created this workflow
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastEventId     String?   // optional reference to last event
+  version         Int       @default(1)
+  isLatest        Boolean   @default(true)  // Quick flag to identify latest version
+  previousVersionId String? // Reference to previous workflow version
+
+  // Relations
+  createdBy     User?     @relation("WorkflowCreator", fields: [createdById], references: [id])
   events        EventLog[]
   humanTasks    HumanTask[]
   compensations Compensation[]
+  
+  @@index([workflowGroupId])
+  @@index([workflowGroupId, version])
 }
 
 model EventLog {
@@ -37,17 +67,22 @@ model EventLog {
   type        String
   timestamp   DateTime  @default(now())
   data        Json
-  actor       String?
+  actorId     String?   @db.ObjectId  // User who performed this action
+  actor       String?   // fallback for system/external actors
   version     Int       @default(1)
 
+  // Relations
   workflow    Workflow? @relation(fields: [workflowId], references: [id])
+  actorUser   User?     @relation("EventActor", fields: [actorId], references: [id])
 }
 
 model HumanTask {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   workflowId  String    @db.ObjectId
   stepId      String?
-  assignee    String
+  assigneeId  String?   @db.ObjectId  // User assigned to this task
+  assignee    String    // fallback for email/name if no user ID
+  approvedById String?  @db.ObjectId  // User who approved/rejected this task
   uiSchema    Json       // dynamic JSON schema for approval UI
   response    Json?
   status      String      // pending | approved | rejected | timed_out | escalated
@@ -55,8 +90,12 @@ model HumanTask {
   expiresAt   DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  comment     String?
 
+  // Relations
   workflow    Workflow  @relation(fields: [workflowId], references: [id])
+  assignedTo  User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  approvedBy  User?     @relation("TaskApprover", fields: [approvedById], references: [id])
 }
 
 model Compensation {
