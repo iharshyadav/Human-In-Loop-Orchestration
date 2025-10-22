@@ -23,13 +23,12 @@ export const approvalWorkflow = inngest.createFunction(
       let responseData: any;
       let statusCode: number | null = null;
       
+      const requestData = event.data || {};
+      
       const mockReq = {
         body: {
-          type: "purchase_approval",
-          data: {
-            amount: 1000,
-            item: "AWS Credits",
-          },
+          type: requestData.type,
+          data: requestData.purchaseData || {},
         },
       } as any;
       
@@ -54,35 +53,28 @@ export const approvalWorkflow = inngest.createFunction(
       const workflowStarted = await prisma.workflow.create({
         data : {
           workflowGroupId,
-          name : "Purchase Approval Flow",
+          name : requestData.workflowName || "Purchase Approval Flow",
           status : "running",
           currentStep : "first_step",
           context: JSON.parse(JSON.stringify(responseData?.data || {})),
           lastEventId : "null",
           version: 1,
-          isLatest: true
+          isLatest: true,
+          createdById: requestData.createdById || undefined
         }
       });
 
       const humanTaskStageOne = await prisma.humanTask.create({
         data: {
           workflowId: workflowStarted.id,
-          stepId: "finance_review_step",
-          assignee: "Admin",
-          uiSchema: {
-            type: "form",
-            fields: [
-              { name: "comment", type: "text", label: "Add a note" },
-              {
-                name: "decision",
-                type: "radio",
-                options: ["approve", "reject"],
-              },
-            ],
-          },
+          stepId: requestData.stepId || "finance_review_step",
+          assignee: requestData.assignee,
+          assigneeId: requestData.assigneeId || undefined,
+          uiSchema: requestData.uiSchema,
           response : {},
           status : "pending",
-          channel : "all",
+          channel : requestData.channel || "web",
+          expiresAt: requestData.expiresAt ? new Date(requestData.expiresAt) : undefined,
         },
       });
 
@@ -91,17 +83,7 @@ export const approvalWorkflow = inngest.createFunction(
           workflowId : workflowStarted.id,
           stepId : "finance_review_step",
           type : "workflow.started",
-          data : {
-            type: "form",
-            fields: [
-              { name: "comment", type: "text", label: "Add a note" },
-              {
-                name: "decision",
-                type: "radio",
-                options: ["approve", "reject"],
-              },
-            ],
-          },
+          data : requestData.uiSchema,
           actor : "system.bot",
         }
       })
@@ -163,7 +145,6 @@ export const approvalWorkflow = inngest.createFunction(
           }
         });
         
-        // Create new workflow version for approved state
         const approvedWorkflow = await createWorkflowVersion({
           workflowGroupId: createWorkFlow.workflowGroupId,
           name: "Purchase Approval Flow",
@@ -173,7 +154,6 @@ export const approvalWorkflow = inngest.createFunction(
           previousWorkflowId: waitingWorkflow.id
         });
         
-        // Log the approval event
         await prisma.eventLog.create({
           data: {
             workflowId: approvedWorkflow.id,
@@ -203,7 +183,6 @@ export const approvalWorkflow = inngest.createFunction(
       await step.run("reject_purchase", async () => {
         console.log(`Purchase ${purchaseData.id} rejected`);
         
-        // Update human task status
         await prisma.humanTask.update({
           where: { id: createWorkFlow.humanTaskId },
           data: {
@@ -212,7 +191,6 @@ export const approvalWorkflow = inngest.createFunction(
           }
         });
         
-        // Create new workflow version for rejected state
         const rejectedWorkflow = await createWorkflowVersion({
           workflowGroupId: createWorkFlow.workflowGroupId,
           name: "Purchase Approval Flow",
@@ -251,7 +229,6 @@ export const approvalWorkflow = inngest.createFunction(
       await step.run("timeout_purchase", async () => {
         console.log(`Purchase ${purchaseData.id} timed out`);
         
-        // Update human task status for timeout
         await prisma.humanTask.update({
           where: { id: createWorkFlow.humanTaskId },
           data: {
@@ -259,7 +236,6 @@ export const approvalWorkflow = inngest.createFunction(
           }
         });
         
-        // Create new workflow version for timeout state
         const timedOutWorkflow = await createWorkflowVersion({
           workflowGroupId: createWorkFlow.workflowGroupId,
           name: "Purchase Approval Flow",
@@ -269,7 +245,6 @@ export const approvalWorkflow = inngest.createFunction(
           previousWorkflowId: waitingWorkflow.id
         });
         
-        // Log the timeout event
         await prisma.eventLog.create({
           data: {
             workflowId: createWorkFlow.workflowId,

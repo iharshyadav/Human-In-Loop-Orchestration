@@ -4,6 +4,7 @@ import { inngest } from '../inngest/client';
 
 const router = express.Router();
 
+// GET /api/approval/pending - Get all pending approval tasks
 router.get('/pending', async (req, res) => {
   try {
     const pendingTasks = await prisma.humanTask.findMany({
@@ -228,6 +229,44 @@ router.get('/workflow/:workflowId/tasks', async (req, res) => {
       success: false,
       message: 'Failed to fetch workflow tasks',
       error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Legacy endpoint - GET /api/approval/tasks
+router.get('/tasks', async (req, res) => {
+  try {
+    const pendingTasks = await prisma.humanTask.findMany({
+      where: {
+        status: 'pending'
+      },
+      include: {
+        workflow: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            context: true,
+            createdAt: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      data: pendingTasks,
+      count: pendingTasks.length
+    });
+    
+  } catch (error) {
+    console.error('Get pending tasks error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to retrieve pending tasks'
     });
   }
 });

@@ -45,12 +45,11 @@ model Workflow {
   createdById     String?   @db.ObjectId  // User who created this workflow
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  lastEventId     String?   // optional reference to last event
+  lastEventId     String?   
   version         Int       @default(1)
   isLatest        Boolean   @default(true)  // Quick flag to identify latest version
   previousVersionId String? // Reference to previous workflow version
 
-  // Relations
   createdBy     User?     @relation("WorkflowCreator", fields: [createdById], references: [id])
   events        EventLog[]
   humanTasks    HumanTask[]
@@ -71,7 +70,6 @@ model EventLog {
   actor       String?   // fallback for system/external actors
   version     Int       @default(1)
 
-  // Relations
   workflow    Workflow? @relation(fields: [workflowId], references: [id])
   actorUser   User?     @relation("EventActor", fields: [actorId], references: [id])
 }
@@ -92,7 +90,6 @@ model HumanTask {
   updatedAt   DateTime    @updatedAt
   comment     String?
 
-  // Relations
   workflow    Workflow  @relation(fields: [workflowId], references: [id])
   assignedTo  User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
   approvedBy  User?     @relation("TaskApprover", fields: [approvedById], references: [id])
@@ -101,7 +98,7 @@ model HumanTask {
 model Compensation {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
   workflowId   String    @db.ObjectId
-  action       String     // e.g. refund, rollback_deploy, revert_contract
+  action       String     // refund, rollback_deploy, revert_contract
   payload      Json
   status       String     // pending | executed | failed
   executedAt   DateTime?

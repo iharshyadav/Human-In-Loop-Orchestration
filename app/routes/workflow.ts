@@ -1,6 +1,7 @@
 import express from 'express';
 import { getWorkflowHistory, getLatestWorkflowVersion } from '../utils/workflowVersioning';
 import prisma from '../database/db';
+import { inngest } from '../inngest/client';
 
 const router = express.Router();
 
@@ -189,6 +190,66 @@ router.get('/', async (req, res) => {
       success: false,
       message: 'Failed to fetch workflows',
       error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/workflow/trigger - Trigger a new approval workflow
+router.post('/trigger', async (req, res) => {
+  try {
+    const {
+      workflowName,
+      type,
+      purchaseData,
+      assignee,
+      assigneeId,
+      stepId,
+      uiSchema,
+      channel,
+      expiresAt,
+      createdById
+    } = req.body;
+
+    if (!purchaseData) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'purchaseData is required'
+      });
+    }
+
+    const result = await inngest.send({
+      name: 'system.request.approval',
+      data: {
+        requestId: `req_${Date.now()}`,
+        triggeredAt: new Date().toISOString(),
+        source: 'api',
+        workflowName,
+        type,
+        purchaseData,
+        assignee,
+        assigneeId,
+        stepId,
+        uiSchema,
+        channel,
+        expiresAt,
+        createdById
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Approval workflow triggered successfully',
+      data: {
+        eventId: result.ids,
+        triggeredAt: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Workflow trigger error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to trigger workflow'
     });
   }
 });
